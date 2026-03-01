@@ -1,0 +1,32 @@
+{
+    "id": "dankGpuRecorder",
+    "name": "GPU Screen Recorder",
+    "description": "Start, Pause, and Stop GPU Screen Recorder from the Dankbar",
+    "version": "1.0.0",
+    "author": "ruben",
+    "icon": "videocam",
+    "type": "widget",
+    "component": "./GpuRecorderWidget.qml",
+    "settings": "./Settings.qml",
+    "capabilities": [
+        "dankbar-widget",
+        "control-center"
+    ],
+    "category": "utilities",
+    "repo": "https://github.com/danklinux/dms-gpu-recorder",
+    "compositors": [
+        "niri",
+        "hyprland"
+    ],
+    "distro": [
+        "any"
+    ],
+    "dependencies": [
+        "gpu-screen-recorder"
+    ],
+    "permissions": [
+        "process",
+        "settings_read",
+        "settings_write"
+    ]
+}
