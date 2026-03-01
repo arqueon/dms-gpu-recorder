@@ -64,13 +64,13 @@ PluginComponent {
 
         if (root.recordState === "recording") {
             // Pause
-            let execCmd = ["sh", "-c", "killall -SIGSTOP gpu-screen-recorder"];
+            let execCmd = ["sh", "-c", "pkill -SIGSTOP -f gpu-screen-recorder"];
             Quickshell.execDetached(execCmd);
             root.recordState = "paused";
             ToastService.showInfo("GPU Recorder", "Recording Paused");
         } else if (root.recordState === "paused") {
             // Resume
-            let execCmd = ["sh", "-c", "killall -SIGCONT gpu-screen-recorder"];
+            let execCmd = ["sh", "-c", "pkill -SIGCONT -f gpu-screen-recorder"];
             Quickshell.execDetached(execCmd);
             root.recordState = "recording";
             ToastService.showInfo("GPU Recorder", "Recording Resumed");
@@ -88,7 +88,7 @@ PluginComponent {
         let dirCmd = "DIR=\"${XDG_VIDEOS_DIR:-$HOME/Videos}/Screencasting\"; mkdir -p \"$DIR\"; FILE=\"$DIR/$(date +'%Y-%m-%d_%H-%M-%S').mp4\"; ";
         
         let cursorFlag = root.recordCursor ? "yes" : "no";
-        let recCmd = "nohup gpu-screen-recorder -w screen -f " + root.fps + " -a default_output -q " + root.quality + " -cursor " + cursorFlag + " -o \"$FILE\" > /dev/null 2>&1 &";
+        let recCmd = "nohup gpu-screen-recorder -w portal -f " + root.fps + " -k h264 -ac opus -a default_output -q " + root.quality + " -cursor " + cursorFlag + " -cr limited -o \"$FILE\" > /dev/null 2>&1 &";
 
         let execCmd = ["sh", "-c", dirCmd + recCmd];
         Quickshell.execDetached(execCmd);
@@ -103,10 +103,10 @@ PluginComponent {
     function stopRecording() {
         if (root.recordState === "paused") {
             // Must resume before sending SIGINT, otherwise the mp4 closes incorrectly
-            Quickshell.execDetached(["sh", "-c", "killall -SIGCONT gpu-screen-recorder"]);
+            Quickshell.execDetached(["sh", "-c", "pkill -SIGCONT -f gpu-screen-recorder"]);
         }
 
-        let execCmd = ["sh", "-c", "sleep 0.2; killall -SIGINT gpu-screen-recorder"];
+        let execCmd = ["sh", "-c", "sleep 0.2; pkill -SIGINT -f gpu-screen-recorder"];
         Quickshell.execDetached(execCmd);
 
         root.recordState = "idle";
@@ -116,22 +116,25 @@ PluginComponent {
         ToastService.showInfo("GPU Recorder", "Saved to Videos/Screencasting");
     }
 
-    // Required by PluginComponent for the bar itself
     horizontalBarPill: Component {
-        MouseArea {
+        Item {
             width: pillRow.width
-            height: parent.height
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-            
-            onClicked: function(mouse) {
-                if (mouse.button === Qt.LeftButton) {
-                    if (root.recordState === "idle") {
-                        startRecording();
-                    } else {
-                        stopRecording();
+            implicitHeight: pillRow.height || 24 // Fallback height
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.LeftButton) {
+                        if (root.recordState === "idle") {
+                            startRecording();
+                        } else {
+                            stopRecording();
+                        }
+                    } else if (mouse.button === Qt.RightButton || mouse.button === Qt.MiddleButton) {
+                        togglePause();
                     }
-                } else if (mouse.button === Qt.RightButton || mouse.button === Qt.MiddleButton) {
-                    togglePause();
                 }
             }
 
@@ -160,20 +163,24 @@ PluginComponent {
     }
 
     verticalBarPill: Component {
-        MouseArea {
-            width: parent.width
-            height: pillCol.height
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-            
-            onClicked: function(mouse) {
-                if (mouse.button === Qt.LeftButton) {
-                    if (root.recordState === "idle") {
-                        startRecording();
-                    } else {
-                        stopRecording();
+        Item {
+            width: parent.width || 24
+            implicitHeight: pillCol.height
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.LeftButton) {
+                        if (root.recordState === "idle") {
+                            startRecording();
+                        } else {
+                            stopRecording();
+                        }
+                    } else if (mouse.button === Qt.RightButton || mouse.button === Qt.MiddleButton) {
+                        togglePause();
                     }
-                } else if (mouse.button === Qt.RightButton || mouse.button === Qt.MiddleButton) {
-                    togglePause();
                 }
             }
 
