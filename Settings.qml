@@ -27,26 +27,74 @@ PluginSettings {
     }
 
     SelectionSetting {
-        settingKey: "fps"
-        label: "Frames per Second (FPS)"
-        description: "Choose recording framerate"
+        settingKey: "captureSource"
+        label: "Capture Source"
+        description: "portal = Window/Screen picker; screen = Entire first monitor"
         options: [
-            {label: "30 FPS", value: "30"},
-            {label: "60 FPS", value: "60"}
+            { label: "Portal (Picker)", value: "portal" },
+            { label: "Full Screen", value: "screen" }
         ]
-        defaultValue: "60"
+        defaultValue: "portal"
+    }
+
+    StringSetting {
+        settingKey: "outputDir"
+        label: "Recording Directory"
+        description: "Absolute path where videos are saved (ex: /home/user/Videos)"
+        placeholder: "/home/user/Videos/Screencasting"
+        defaultValue: ""
+    }
+
+    SliderSetting {
+        settingKey: "replaySeconds"
+        label: "Replay Buffer (seconds)"
+        description: "0 = Normal recording; >0 = Save last N seconds when stopping"
+        defaultValue: 0
+        minimum: 0
+        maximum: 180
+        unit: "s"
+    }
+
+    StringSetting {
+        settingKey: "replayOutputDir"
+        label: "Replay Directory"
+        description: "If empty, uses the standard Recording Directory"
+        placeholder: "/home/user/Videos/Replays"
+        defaultValue: ""
+    }
+
+    SliderSetting {
+        settingKey: "fps"
+        label: "FPS"
+        description: "Frames per second"
+        defaultValue: 60
+        minimum: 30
+        maximum: 144
+        unit: ""
     }
 
     SelectionSetting {
         settingKey: "quality"
         label: "Video Quality"
-        description: "Choose recording quality setting for h264/av1"
+        description: "GPU encoding preset for h264/av1"
         options: [
-            {label: "Medium", value: "medium"},
-            {label: "High", value: "high"},
-            {label: "Very High", value: "very_high"}
+            { label: "Ultra", value: "ultra" },
+            { label: "very_high", value: "very_high" },
+            { label: "High", value: "high" },
+            { label: "Medium", value: "medium" }
         ]
         defaultValue: "very_high"
+    }
+
+    SelectionSetting {
+        settingKey: "container"
+        label: "File Format"
+        description: "Video container format"
+        options: [
+            { label: "MP4", value: "mp4" },
+            { label: "MKV", value: "mkv" }
+        ]
+        defaultValue: "mp4"
     }
 
     ToggleSetting {

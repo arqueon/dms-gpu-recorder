@@ -12,21 +12,26 @@ PluginComponent {
     id: root
 
     // -- Settings ----------------------------------------------------------------------
-    property string fps: pluginData.fps || "60"
+    property string captureSource: pluginData.captureSource || "portal"
+    property string outputDir: pluginData.outputDir || ""
+    property int replaySeconds: pluginData.replaySeconds ?? 0
+    property string replayOutputDir: pluginData.replayOutputDir || ""
+    property string fps: pluginData.fps ? pluginData.fps.toString() : "60"
     property string quality: pluginData.quality || "very_high"
+    property string container: pluginData.container || "mp4"
     property bool recordCursor: pluginData.recordCursor !== undefined ? pluginData.recordCursor : true
 
     // -- Internal State ----------------------------------------------------------------------
-    // idle, recording, paused
+    // idle, recording, paused, replay
     property string recordState: "idle" 
     property int recordTimerSeconds: 0
 
     // Control Center Widget Properties
-    // Based on the state, we swap the material icon
-    ccWidgetIcon: recordState === "idle" ? "videocam" : (recordState === "recording" ? "stop_circle" : "pause_circle")
+    ccWidgetIcon: recordState === "idle" ? "videocam" : (recordState === "replay" ? "replay" : (recordState === "recording" ? "stop_circle" : "pause_circle"))
     ccWidgetPrimaryText: "GPU Recorder"
     ccWidgetSecondaryText: {
         if (recordState === "idle") return "Ready";
+        if (recordState === "replay") return "Replay Buffer - " + _formatTime(recordTimerSeconds);
         if (recordState === "paused") return "Paused - " + _formatTime(recordTimerSeconds);
         return "Recording - " + _formatTime(recordTimerSeconds);
     }
@@ -78,26 +83,39 @@ PluginComponent {
     }
 
     function startRecording() {
-        // Load plugins data just in case
         if (typeof PluginService !== "undefined" && PluginService) {
+            root.captureSource = PluginService.loadPluginData("dankGpuRecorder", "captureSource", "portal") || "portal";
+            root.outputDir = PluginService.loadPluginData("dankGpuRecorder", "outputDir", "");
+            root.replaySeconds = parseInt(PluginService.loadPluginData("dankGpuRecorder", "replaySeconds", "0")) || 0;
+            root.replayOutputDir = PluginService.loadPluginData("dankGpuRecorder", "replayOutputDir", "");
             root.fps = PluginService.loadPluginData("dankGpuRecorder", "fps", "60") || "60";
             root.quality = PluginService.loadPluginData("dankGpuRecorder", "quality", "very_high") || "very_high";
+            root.container = PluginService.loadPluginData("dankGpuRecorder", "container", "mp4") || "mp4";
             root.recordCursor = PluginService.loadPluginData("dankGpuRecorder", "recordCursor", true);
         }
 
-        let dirCmd = "DIR=\"${XDG_VIDEOS_DIR:-$HOME/Videos}/Screencasting\"; mkdir -p \"$DIR\"; FILE=\"$DIR/$(date +'%Y-%m-%d_%H-%M-%S').mp4\"; ";
+        let baseDir = root.outputDir !== "" ? root.outputDir : "${XDG_VIDEOS_DIR:-$HOME/Videos}/Screencasting";
+        let outDirCmd = "DIR=\"" + baseDir + "\"; mkdir -p \"$DIR\"; FILE=\"$DIR/$(date +'%Y-%m-%d_%H-%M-%S')." + root.container + "\"; ";
         
         let cursorFlag = root.recordCursor ? "yes" : "no";
-        let recCmd = "nohup gpu-screen-recorder -w portal -f " + root.fps + " -k h264 -ac opus -a default_output -q " + root.quality + " -cursor " + cursorFlag + " -cr limited -o \"$FILE\" > /dev/null 2>&1 &";
+        let recCmd = "nohup gpu-screen-recorder -w " + root.captureSource + " -f " + root.fps + " -k h264 -ac opus -a default_output -q " + root.quality + " -cursor " + cursorFlag + " -cr limited ";
 
-        let execCmd = ["sh", "-c", dirCmd + recCmd];
+        if (root.replaySeconds > 0) {
+            let rpDir = root.replayOutputDir !== "" ? root.replayOutputDir : baseDir;
+            recCmd += "-r " + root.replaySeconds + " -ro \"" + rpDir + "\" ";
+        } else {
+            recCmd += "-o \"$FILE\" ";
+        }
+        recCmd += "> /dev/null 2>&1 &";
+
+        let execCmd = ["sh", "-c", outDirCmd + recCmd];
         Quickshell.execDetached(execCmd);
 
         root.recordTimerSeconds = 0;
-        root.recordState = "recording";
+        root.recordState = root.replaySeconds > 0 ? "replay" : "recording";
         recordingTimer.start();
         
-        ToastService.showInfo("GPU Recorder", "Started capturing Screen");
+        ToastService.showInfo("GPU Recorder", root.replaySeconds > 0 ? "Replay Buffer Started" : "Started capturing Screen");
     }
 
     function stopRecording() {
@@ -106,14 +124,21 @@ PluginComponent {
             Quickshell.execDetached(["sh", "-c", "pkill -SIGCONT -f gpu-screen-recorder"]);
         }
 
-        let execCmd = ["sh", "-c", "sleep 0.2; pkill -SIGINT -f gpu-screen-recorder"];
-        Quickshell.execDetached(execCmd);
+        if (root.recordState === "replay") {
+            // Save the shadowplay buffer
+            let execCmd = ["sh", "-c", "pkill -SIGUSR1 -f gpu-screen-recorder && sleep 0.5 && pkill -SIGINT -f gpu-screen-recorder"];
+            Quickshell.execDetached(execCmd);
+            ToastService.showInfo("GPU Recorder", "Replay Saved Successfully");
+        } else {
+            // Standard stop
+            let execCmd = ["sh", "-c", "sleep 0.2; pkill -SIGINT -f gpu-screen-recorder"];
+            Quickshell.execDetached(execCmd);
+            ToastService.showInfo("GPU Recorder", "Recording Saved");
+        }
 
         root.recordState = "idle";
         recordingTimer.stop();
         root.recordTimerSeconds = 0;
-
-        ToastService.showInfo("GPU Recorder", "Saved to Videos/Screencasting");
     }
 
     horizontalBarPill: Component {
@@ -207,4 +232,47 @@ PluginComponent {
             }
         }
     }
+
+    popoutContent: Component {
+        PopoutComponent {
+            id: popout
+            headerText: "GPU Recorder"
+            detailsText: root.recordState !== "idle" ? "Recording / Replay in progress" : "Powered by gpu-screen-recorder"
+            showCloseButton: true
+            Column {
+                width: parent.width - Theme.spacingL * 2
+                spacing: Theme.spacingM
+                StyledRect {
+                    width: parent.width - Theme.spacingL
+                    height: 48
+                    radius: Theme.cornerRadius
+                    color: root.recordState !== "idle" ? Theme.errorContainer : Theme.primaryContainer
+                    StyledText {
+                        anchors.centerIn: parent
+                        text: root.recordState !== "idle" ? "Stop and Save" : "Start Recording"
+                        font.pixelSize: Theme.fontSizeMedium
+                        color: root.recordState !== "idle" ? Theme.onErrorContainer : Theme.onPrimaryContainer
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (root.recordState === "idle") startRecording(); else stopRecording();
+                            if (typeof popout.closePopout === "function") popout.closePopout();
+                        }
+                    }
+                }
+                StyledText {
+                    width: parent.width
+                    text: "Source: " + root.captureSource + " · " + root.fps + " fps · " + root.quality + (root.replaySeconds > 0 ? " · Replay: " + root.replaySeconds + "s" : "")
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceVariantText
+                    wrapMode: Text.WordWrap
+                }
+            }
+        }
+    }
+    popoutWidth: 320
+    popoutHeight: 220
 }
