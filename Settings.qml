@@ -103,4 +103,11 @@ PluginSettings {
         description: "Include the mouse pointer in the recording"
         defaultValue: true
     }
+
+    ToggleSetting {
+        settingKey: "recordMicrophone"
+        label: "Record Microphone"
+        description: "Capture microphone audio (default_input) alongside system audio"
+        defaultValue: false
+    }
 }

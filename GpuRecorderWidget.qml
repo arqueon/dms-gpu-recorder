@@ -20,11 +20,14 @@ PluginComponent {
     property string quality: pluginData.quality || "very_high"
     property string container: pluginData.container || "mp4"
     property bool recordCursor: pluginData.recordCursor !== undefined ? pluginData.recordCursor : true
+    property bool recordMicrophone: pluginData.recordMicrophone !== undefined ? pluginData.recordMicrophone : false
 
     // -- Internal State ----------------------------------------------------------------------
     // idle, recording, paused, replay
     property string recordState: "idle" 
     property int recordTimerSeconds: 0
+    property bool _stopRequested: false
+    property bool _cooldown: false
 
     // Control Center Widget Properties
     ccWidgetIcon: recordState === "idle" ? "videocam" : (recordState === "replay" ? "replay" : (recordState === "recording" ? "stop_circle" : "pause_circle"))
@@ -83,6 +86,8 @@ PluginComponent {
     }
 
     function startRecording() {
+        if (root.recordState !== "idle" || root._cooldown) return;
+
         if (typeof PluginService !== "undefined" && PluginService) {
             root.captureSource = PluginService.loadPluginData("dankGpuRecorder", "captureSource", "portal") || "portal";
             root.outputDir = PluginService.loadPluginData("dankGpuRecorder", "outputDir", "");
@@ -92,13 +97,17 @@ PluginComponent {
             root.quality = PluginService.loadPluginData("dankGpuRecorder", "quality", "very_high") || "very_high";
             root.container = PluginService.loadPluginData("dankGpuRecorder", "container", "mp4") || "mp4";
             root.recordCursor = PluginService.loadPluginData("dankGpuRecorder", "recordCursor", true);
+            root.recordMicrophone = PluginService.loadPluginData("dankGpuRecorder", "recordMicrophone", false);
         }
 
         let baseDir = root.outputDir !== "" ? root.outputDir : "${XDG_VIDEOS_DIR:-$HOME/Videos}/Screencasting";
         let outDirCmd = "DIR=\"" + baseDir + "\"; mkdir -p \"$DIR\"; FILE=\"$DIR/$(date +'%Y-%m-%d_%H-%M-%S')." + root.container + "\"; ";
         
         let cursorFlag = root.recordCursor ? "yes" : "no";
-        let recCmd = "nohup gpu-screen-recorder -w " + root.captureSource + " -f " + root.fps + " -k h264 -ac opus -a default_output -q " + root.quality + " -cursor " + cursorFlag + " -cr limited ";
+        let audioFlags = "-a default_output";
+        if (root.recordMicrophone) audioFlags += " -a default_input";
+
+        let recCmd = "nohup gpu-screen-recorder -w " + root.captureSource + " -f " + root.fps + " -k h264 -ac opus " + audioFlags + " -q " + root.quality + " -cursor " + cursorFlag + " -cr limited ";
 
         if (root.replaySeconds > 0) {
             let rpDir = root.replayOutputDir !== "" ? root.replayOutputDir : baseDir;
@@ -109,7 +118,8 @@ PluginComponent {
         recCmd += "> /dev/null 2>&1 &";
 
         let execCmd = ["sh", "-c", outDirCmd + recCmd];
-        Quickshell.execDetached(execCmd);
+        let proc = recorderProcessComponent.createObject(root, { procCommand: execCmd });
+        proc.running = true;
 
         root.recordTimerSeconds = 0;
         root.recordState = root.replaySeconds > 0 ? "replay" : "recording";
@@ -119,6 +129,9 @@ PluginComponent {
     }
 
     function stopRecording() {
+        if (root.recordState === "idle") return;
+        root._stopRequested = true;
+
         if (root.recordState === "paused") {
             // Must resume before sending SIGINT, otherwise the mp4 closes incorrectly
             Quickshell.execDetached(["sh", "-c", "pkill -SIGCONT -f gpu-screen-recorder"]);
@@ -130,8 +143,8 @@ PluginComponent {
             Quickshell.execDetached(execCmd);
             ToastService.showInfo("GPU Recorder", "Replay Saved Successfully");
         } else {
-            // Standard stop
-            let execCmd = ["sh", "-c", "sleep 0.2; pkill -SIGINT -f gpu-screen-recorder"];
+            // Standard stop with fallback kill just in case portal hangs
+            let execCmd = ["sh", "-c", "sleep 0.2; pkill -SIGINT -f gpu-screen-recorder; sleep 1.2; pkill -SIGKILL -f gpu-screen-recorder"];
             Quickshell.execDetached(execCmd);
             ToastService.showInfo("GPU Recorder", "Recording Saved");
         }
@@ -139,6 +152,35 @@ PluginComponent {
         root.recordState = "idle";
         recordingTimer.stop();
         root.recordTimerSeconds = 0;
+        root._cooldown = true;
+        cooldownTimer.start();
+    }
+
+    Timer {
+        id: cooldownTimer
+        interval: 1500
+        repeat: false
+        onTriggered: root._cooldown = false
+    }
+
+    Component {
+        id: recorderProcessComponent
+        Process {
+            property var procCommand: ["sh", "-c", ""]
+            command: procCommand
+            onExited: function(exitCode) {
+                root.recordState = "idle";
+                recordingTimer.stop();
+                root.recordTimerSeconds = 0;
+
+                // When user cancels the portal dialogue, it exits with an error code.
+                if (!root._stopRequested && exitCode !== 0) {
+                    ToastService.showInfo("GPU Recorder", "Recording Cancelled");
+                }
+                root._stopRequested = false;
+                destroy();
+            }
+        }
     }
 
     horizontalBarPill: Component {
